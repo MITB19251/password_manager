@@ -2,25 +2,15 @@ from tkinter import *
 from tkinter import messagebox
 from random import *
 import json
-from cryptography.fernet import Fernet
+from cryptography.fernet import Fernet,MultiFernet
 import bcrypt
 import os
 import re
 import base64
-from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
-
-# kdf = Scrypt(
-#     salt=b'\xbf\xdf \xd2\x00\xae\x99\xbb\x0f\x80\xdb\xbf;\\9\x7f',
-#     length=32,
-#     n=2**14,
-#     r=8,
-#     p=1,
-# )
 
 mp=""
 vk=""
 ak=""
-right_ak=""
 
 letters = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm',
            'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
@@ -37,23 +27,34 @@ def create_auth_key(x,y,salt):
     return bcrypt.hashpw(key.encode(),salt)
 
 def encrypt_data(vault_key, data):
-    derive_key = bcrypt.kdf(
-        password=vault_key,
-        salt=b'\xbf\xdf \xd2\x00\xae\x99\xbb\x0f\x80\xdb\xbf;\\9\x7f',
-        desired_key_bytes=32,
-        rounds=100
-    )
-    f=Fernet(base64.urlsafe_b64encode(derive_key))
+    derive_keys = []
+
+    for key in vault_key:
+        derive_key = bcrypt.kdf(
+            password=key,
+            salt=b'\xbf\xdf \xd2\x00\xae\x99\xbb\x0f\x80\xdb\xbf;\\9\x7f',
+            desired_key_bytes=32,
+            rounds=100
+        )
+        derive_keys.append(Fernet(base64.urlsafe_b64encode(derive_key)))
+
+    f = MultiFernet(derive_keys)
     return f.encrypt(data.encode())
 
 def decrypt_data(vault_key, data):
-    derive_key = bcrypt.kdf(
-        password=vault_key,
-        salt=b'\xbf\xdf \xd2\x00\xae\x99\xbb\x0f\x80\xdb\xbf;\\9\x7f',
-        desired_key_bytes=32,
-        rounds=100
-    )
-    f=Fernet(base64.urlsafe_b64encode(derive_key))
+    derive_keys = []
+
+    for key in vault_key:
+        derive_key = bcrypt.kdf(
+            password = key,
+            salt=b'\xbf\xdf \xd2\x00\xae\x99\xbb\x0f\x80\xdb\xbf;\\9\x7f',
+            desired_key_bytes=32,
+            rounds=100
+        )
+        derive_keys.append(Fernet(base64.urlsafe_b64encode(derive_key)))
+
+    f = MultiFernet(derive_keys)
+    print(type(f))
     return f.decrypt(data)
 
 def generate():
@@ -109,7 +110,8 @@ LARGEFONT=("Verdana", 35)
 
 
 
-
+def indicate(lb):
+    lb.config()
 
 class tkinterApp(Tk):
     # __init__ function for class tkinterApp
@@ -133,8 +135,6 @@ class tkinterApp(Tk):
             self.show_frame(newUser)
             print("1")
         else:
-            global right_ak
-            right_ak=get_key("key.txt")
             self.show_frame(existingUser)
             print("2")
     
@@ -205,6 +205,9 @@ class newUser(Frame):
         go=Button(self, text='Proceed', command=lambda: new_user_proceed(controller,m_e.get(),c_e.get(),q1_e.get(),ans1_e.get(),q2_e.get(),ans2_e.get()), font=['Merriweather', 10, 'normal'])
         go.grid(column=3, row=10)
 
+        back = Button(self, text = 'Back', command = lambda:controller.show_frame(home), font=['Merriweather', 10, 'normal'])
+        back.grid(column=3, row = 11)
+
 def new_user_proceed(controller,p,conf_p,q1,ans1,q2,ans2):
     global mp,vk,ak
     if(len(p)==0 or len(conf_p)==0 or len(q1)==0 or len(ans1)==0 or len(q2)==0 or len(ans2)==0):
@@ -220,6 +223,7 @@ def new_user_proceed(controller,p,conf_p,q1,ans1,q2,ans2):
         store_key("A1.txt",create_vault_key(ans1,salt).decode())
         store_key("Q2.txt",q2)
         store_key("A2.txt",create_vault_key(ans2,salt).decode())
+        store_key("key_backup.txt", encrypt_data([ans1.encode(), ans2.encode()], mp).decode())
         controller.show_frame(home)
         print("3")
     else:
@@ -250,11 +254,11 @@ class existingUser(Frame):
 
         mp=Label(self, text='Enter Master Password   :', font=fo)
         mp.grid(column=1, row=2, sticky='e', padx=7)
-        m_e=Entry(self, width=39, font=fo)
+        m_e=Entry(self, show="*", width=39, font=fo)
         m_e.grid(row=2, column=2, columnspan=2, pady=7)
         m_e.focus()
 
-        go=Button(self, text="Proceed", command=lambda: existing_user_proceed(controller,m_e.get()), font=['Merriweather', 10, 'normal'])
+        go=Button(self, text="Proceed", command=lambda: existing_user_proceed(controller,m_e), font=['Merriweather', 10, 'normal'])
         go.grid(column=3, row=3)
 
         check=Button(self, text='Forgot Password', width=42, command=lambda: controller.show_frame(securityQ), font=['Merriweather', 10, 'normal'])
@@ -262,13 +266,14 @@ class existingUser(Frame):
 
 def existing_user_proceed(controller,s):
     global mp,vk,ak
-    mp=s
+    mp=s.get()
+    s.delete(0, END)
     salt=get_key("salt.txt").encode()
     vk=create_vault_key(mp,salt)
     ak=create_auth_key(mp,vk,salt)
     print(ak)
-    print(right_ak)
-    if(right_ak==ak.decode()):
+    print(get_key("key.txt"))
+    if(get_key("key.txt")==ak.decode()):
         print("31")
         controller.show_frame(home)
     else:
@@ -308,6 +313,10 @@ class securityQ(Frame):
 def security_q_proceed(controller,a1,a2):
     salt=get_key("salt.txt").encode()
     if(get_key("A1.txt")==create_vault_key(a1,salt).decode() and get_key("A2.txt")==create_vault_key(a2,salt).decode()):
+        mp=decrypt_data([a1.encode(), a2.encode()], get_key("key_backup.txt").encode()).decode()
+        vk = create_vault_key(mp,salt)
+        ak = create_auth_key(mp,vk,salt)
+        messagebox.showinfo(title="Master Password", message=f'Your master password was {mp}')
         controller.show_frame(home)
         print("32")
     else:
@@ -341,8 +350,11 @@ class home(Frame):
         new = Button(self, text='Add New Website Info', width=42, command=lambda: controller.show_frame(newLogin), font=['Merriweather', 10, 'normal'])
         new.grid(column=3, row=4, columnspan=1, pady=7, padx=5)
 
-        set = Button(self, text='Edit Master Login Info', width=42, command=lambda: controller.show_frame(newUser), font=['Merriweather', 10, 'normal'])
-        set.grid(column=3, row=5, columnspan=1, pady=7, padx=5)
+        # set = Button(self, text='Edit Master Login Info', width=42, command=lambda: controller.show_frame(newUser), font=['Merriweather', 10, 'normal'])
+        # set.grid(column=3, row=5, columnspan=1, pady=7, padx=5)
+
+        logout = Button(self,text= "Logout", command = lambda: controller.show_frame(existingUser), font=['Merriweather', 10, 'normal'])
+        logout.grid(column=3, row = 6)
 
 def get_info(website):
     website = website.lower()
@@ -358,7 +370,7 @@ def get_info(website):
     
     else:
         if website in f:
-            messagebox.showinfo(title=website, message=f'Email/Username : {decrypt_data(vk,f[f"{website}"]["email"].encode()).decode()}\n\nPassword : {decrypt_data(vk,f[f"{website}"]["password"].encode()).decode()}')
+            messagebox.showinfo(title=website, message=f'Email/Username : {decrypt_data([vk],f[f"{website}"]["email"].encode()).decode()}\n\nPassword : {decrypt_data([vk],f[f"{website}"]["password"].encode()).decode()}')
         elif website not in f:
             messagebox.showerror(title='Error', message=f'Data for {website} does not exist!')
 
@@ -399,19 +411,21 @@ class newLogin(Frame):
         gen = Button(self, text="Generate Password", command=lambda: add_p(pas_e), font=['Merriweather', 10, 'normal'])
         gen.grid(column=3, row=5)
 
-        save = Button(self, text="Save Info", command=lambda: save_info(w_e.get(),em_e.get(),pas_e.get()), font=['Merriweather', 10, 'normal'])
+        save = Button(self, text="Save Info", command=lambda: save_info(controller,w_e,em_e,pas_e), font=['Merriweather', 10, 'normal'])
         save.grid(column=3, row=6)
 
-def save_info(website,email,password):
-    website = website.lower()
+        back = Button(self,text = "Back", command = lambda : controller.show_frame(home), font=['Merriweather', 10, 'normal'])
+        back.grid(column = 3, row = 7)
+
+def save_info(controller,website,email,password):
     d={
-        website:
+        website.get().lower():
             {
-            "email" : encrypt_data(vk,email).decode(), 
-            "password" : encrypt_data(vk,password).decode()
+            "email" : encrypt_data([vk],email.get()).decode(), 
+            "password" : encrypt_data([vk],password.get()).decode()
         }
     }
-    if len(website) != 0 and len(email) != 0 and len(password) != 0 :
+    if len(website.get()) != 0 and len(email.get()) != 0 and len(password.get()) != 0 :
         try:
             with open('Data.json', mode='r') as data:
                 od = json.load(data)
@@ -423,7 +437,11 @@ def save_info(website,email,password):
             with open('Data.json', mode='w') as data:
                 json.dump(od, data, indent=4)
         
+        controller.show_frame(home)
         messagebox.showinfo(title='Password Manager', message="Successfully Saved")
+        website.delete(0,END)
+        email.delete(0,END)
+        password.delete(0,END)
 
     else:
         messagebox.showwarning(title="Error", message="Don't leave any field empty")
