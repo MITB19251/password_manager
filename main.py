@@ -162,13 +162,13 @@ class newUser(Frame):
 
         mp=Label(self, text='Enter Master Password   :', font=fo)
         mp.grid(column=1, row=2, sticky='e', padx=7)
-        m_e=Entry(self, width=39, font=fo)
+        m_e=Entry(self, show="*", width=39, font=fo)
         m_e.grid(row=2, column=2, columnspan=2, pady=7)
         m_e.focus()
 
         cmp=Label(self, text='Confirm Master Password   :', font=fo)
         cmp.grid(column=1, row=3, sticky='e', padx=7)
-        c_e=Entry(self, width=39, font=fo)
+        c_e=Entry(self, show="*", width=39, font=fo)
         c_e.grid(row=3, column=2, columnspan=2, pady=7)
         c_e.focus()
 
@@ -202,16 +202,23 @@ class newUser(Frame):
         check=Button(self, text='Check Password Strength', command=lambda: check_strength(m_e.get()), font=['Merriweather', 10, 'normal'])
         check.grid(column=3, row=9)
 
+        show=Button(self, text='Show Password Entered', width=42, command=lambda: messagebox.showinfo(title="Password",message=m_e.get()), font=['Merriweather', 10, 'normal'])
+        show.grid(column=3, row=10, columnspan=1, pady=7, padx=5)
+
         go=Button(self, text='Proceed', command=lambda: new_user_proceed(controller,m_e.get(),c_e.get(),q1_e.get(),ans1_e.get(),q2_e.get(),ans2_e.get()), font=['Merriweather', 10, 'normal'])
-        go.grid(column=3, row=10)
+        go.grid(column=3, row=11)
 
         back = Button(self, text = 'Back', command = lambda:controller.show_frame(home), font=['Merriweather', 10, 'normal'])
-        back.grid(column=3, row = 11)
+        back.grid(column=3, row = 12)
 
 def new_user_proceed(controller,p,conf_p,q1,ans1,q2,ans2):
     global mp,vk,ak
     if(len(p)==0 or len(conf_p)==0 or len(q1)==0 or len(ans1)==0 or len(q2)==0 or len(ans2)==0):
         messagebox.showerror("A field is empty")
+    elif(len(p)>=8 and bool(re.match('((?=.*\d)(?=.*[a-z])(?=.*[A-Z])(?=.*[!@#$%^&*]).{8,30})',p))==False and bool(re.match('((\d*)([a-z]*)([A-Z]*)([!@#$%^&*]*).{8,30})',p))==True):
+        messagebox.showinfo(title="Strength",message="Password is Weak")
+    elif(len(p)<8):
+        messagebox.showinfo(title="Strength",message="Password is Weak")
     elif(p==conf_p):
         mp=p
         salt=bcrypt.gensalt()
@@ -263,6 +270,9 @@ class existingUser(Frame):
 
         check=Button(self, text='Forgot Password', width=42, command=lambda: controller.show_frame(securityQ), font=['Merriweather', 10, 'normal'])
         check.grid(column=3, row=4, columnspan=1, pady=7, padx=5)
+
+        show=Button(self, text='Show Password Entered', width=42, command=lambda: messagebox.showinfo(title="Password",message=m_e.get()), font=['Merriweather', 10, 'normal'])
+        show.grid(column=3, row=5, columnspan=1, pady=7, padx=5)
 
 def existing_user_proceed(controller,s):
     global mp,vk,ak
@@ -350,6 +360,9 @@ class home(Frame):
         new = Button(self, text='Add New Website Info', width=42, command=lambda: controller.show_frame(newLogin), font=['Merriweather', 10, 'normal'])
         new.grid(column=3, row=4, columnspan=1, pady=7, padx=5)
 
+        show_all = Button(self, text='Show All Website Info', width=42, command=lambda: all_info(), font=['Merriweather', 10, 'normal'])
+        show_all.grid(column=3, row=5)
+
         # set = Button(self, text='Edit Master Login Info', width=42, command=lambda: controller.show_frame(newUser), font=['Merriweather', 10, 'normal'])
         # set.grid(column=3, row=5, columnspan=1, pady=7, padx=5)
 
@@ -369,12 +382,28 @@ def get_info(website):
         messagebox.showinfo(title='Error', message=f'Data for {website} does not exist!')
     
     else:
-        if website in f:
-            messagebox.showinfo(title=website, message=f'Email/Username : {decrypt_data([vk],f[f"{website}"]["email"].encode()).decode()}\n\nPassword : {decrypt_data([vk],f[f"{website}"]["password"].encode()).decode()}')
-        elif website not in f:
+        found=False
+        for w in f:
+            if decrypt_data([vk],f"{w}".encode()).decode()==website:
+                messagebox.showinfo(title=f"{website}", message=f'Email/Username : {decrypt_data([vk],f[w]["email"].encode()).decode()}\n\nPassword : {decrypt_data([vk],f[w]["password"].encode()).decode()}')
+                found=True
+        if(not found):
             messagebox.showerror(title='Error', message=f'Data for {website} does not exist!')
 
-
+def all_info():
+    S=""
+    with open('Data.json', mode='r') as data:
+        r=2
+        f=json.load(data)
+        for website in f:
+            S+=f'Website:   {decrypt_data([vk],f"{website}".encode()).decode()}'
+            S+='\n'
+            S+=f'Email:   {decrypt_data([vk],f[f"{website}"]["email"].encode()).decode()}'
+            S+='\n'
+            S+=f'Password:   {decrypt_data([vk],f[f"{website}"]["password"].encode()).decode()}'
+            S+='\n\n'
+    messagebox.showinfo(title="All data", message=S)
+                
 
 
 
@@ -419,7 +448,7 @@ class newLogin(Frame):
 
 def save_info(controller,website,email,password):
     d={
-        website.get().lower():
+        encrypt_data([vk],website.get().lower()).decode():
             {
             "email" : encrypt_data([vk],email.get()).decode(), 
             "password" : encrypt_data([vk],password.get()).decode()
